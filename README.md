@@ -11,7 +11,11 @@ puntuación y mayúsculas, mejorando su utilidad en tareas posteriores como: Res
 Análisis de sentimiento o Traducción automática.
 
 📄 Ejemplo
-Entrada original:
-“cuándo vamos a mcdonald's ellos no vienen hoy dónde están ahora”
+
+- **Entrada original:**
+  “cuándo vamos a mcdonald's ellos no vienen hoy dónde están ahora”
+
+- **Texto esperado reconstruido:**
+  "¿Cuándo vamos a McDonald's? Ellos no vienen hoy. ¿Dónde están ahora?"
 
 

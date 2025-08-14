@@ -1,1 +1,1 @@
-from .texrec import TexRec
+from texrec import TexRec

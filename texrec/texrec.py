@@ -1,9 +1,9 @@
 from .model import Model
-from .utils.dataset import PunctCapitalDataset, collate_fn
+from .utils.dataset import collate_fn
 from .utils.dataloader import create_dataloader
 
 import os
-from typing import Callable, Optional
+from typing import Optional
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -12,8 +12,6 @@ from sklearn.metrics import classification_report
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
-from torch.cuda.amp import autocast, GradScaler
-from torch.optim import lr_scheduler
 from transformers import BertTokenizer, BertTokenizerFast
 
 
@@ -58,6 +56,12 @@ class TexRec:
 
         self.idx_map_init = {0: "", 1: "¿"}
         self.idx_map_final = {0: "", 1: ".", 2: "?", 3: ","}
+
+
+    @property
+    def n_params(self) -> int:
+        """Number of trainable parameters in the model"""
+        return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
 
     @staticmethod
@@ -153,8 +157,7 @@ class TexRec:
         training_loss = 0.0
         for input_ids, target in train_loader:
             self.optimizer.zero_grad()
-            with autocast("cuda"):
-              logits = self.model(input_ids)
+            logits = self.model(input_ids)
             loss = self._loss_fn(logits, target)
             loss.backward()
             self.optimizer.step()
@@ -213,8 +216,6 @@ class TexRec:
         train_data: list[str], val_data: list[str],
         epochs: int = 1, batch_size: int = 1,
         optimizer: torch.optim = torch.optim.SGD, lr: float = 1e-3,
-        lr_scheduler_patience: int = 2,
-        early_stopping_patience: int = 3,
         output_classif_report_dict: bool = False
     ):
         self.batch_size = batch_size
@@ -223,15 +224,16 @@ class TexRec:
         self.epochs = epochs
 
         print(f"Extracting labels from data")
-        train_loader, val_loader = create_dataloader(train_data, self.tokenizer,                                                        batch_size, collate_fn)
+        train_loader, val_loader = (
+            create_dataloader(train_data, self.tokenizer, batch_size, collate_fn),
+            create_dataloader(val_data, self.tokenizer, batch_size, collate_fn)
+        )
 
         losses: dict[str, list[float]] = {"train": [], "val": []}
 
         if output_classif_report_dict:
           classif_reports = {"train": {"init_punct": [], "final_punct": [], "capital": []},
                              "val"  : {"init_punct": [], "final_punct": [], "capital": []}}
-
-        scaler = GradScaler("cuda")
 
         print("Training and validating model...")
         for epoch in range(1, epochs+1):
@@ -471,14 +473,13 @@ class TexRec:
         self.batch_size = train_config["batch_size"]
 
         # Recreate model
-        self.model = RNN(
+        self.model = Model(
             hidden_size=self.hidden_dim,
             num_layers=self.n_layers,
             dropout=self.dropout,
             bidirectional=self.bidirectional,
             lstm=self.lstm
         ).to(self.device)
-
 
         # Load state
         self.model.load_state_dict(model_data["model_state_dict"])

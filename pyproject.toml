@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "texrec"
+version = "0.1.0"
+description = "Primer paquete de prueba"
+readme = "README.md"
+authors = [
+    { name="Santi Drelewicz" }
+]
+dependencies = [
+    "requests",
+    "scikit-learn",
+    "matplotlib",
+    "tqdm",
+    "pandas",
+    "torch",
+    "transformers",
+]
+requires-python = ">=3.8"
+
+[tool.setuptools.packages.find]
+where = ["."]

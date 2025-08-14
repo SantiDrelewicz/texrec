@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+texrec/__init__.py
+texrec/constants.py
+texrec/main.py
+texrec/model.py
+texrec/texrec.py
+texrec.egg-info/PKG-INFO
+texrec.egg-info/SOURCES.txt
+texrec.egg-info/dependency_links.txt
+texrec.egg-info/requires.txt
+texrec.egg-info/top_level.txt
+texrec/utils/__init__.py
+texrec/utils/dataloader.py
+texrec/utils/dataset.py
+texrec/utils/loader.py
+texrec/utils/preprocessing.py

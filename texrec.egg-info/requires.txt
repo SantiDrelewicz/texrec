@@ -1,0 +1,7 @@
+requests
+scikit-learn
+matplotlib
+tqdm
+pandas
+torch
+transformers

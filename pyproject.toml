@@ -17,7 +17,7 @@ dependencies = [
     "tqdm",
     "pandas",
     "torch",
-    "transformers",
+    "transformers"
 ]
 requires-python = ">=3.8"
 

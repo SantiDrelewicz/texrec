@@ -4,7 +4,8 @@ import torch
 from typing import Optional
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
-from texrec.utils.preprocessing import extract_labels, PUNT_INCIAL_MAP, PUNT_FINAL_MAP
+from .preprocessing import extract_labels
+from ..constants import INITIAL_PUNCT_MAP, FINAL_PUNCT_MAP
 
 
 def build_df(sentences: list[str], tokenizer) -> pd.DataFrame:
@@ -24,8 +25,8 @@ def build_df(sentences: list[str], tokenizer) -> pd.DataFrame:
         rows.extend(extract_labels(sentence, instance_id + 1, tokenizer))
 
     df = pd.DataFrame(rows)
-    df["init_punct"] = df["init_punct"].map(PUNT_INCIAL_MAP)
-    df["final_punct"] = df["final_punct"].map(PUNT_FINAL_MAP)
+    df["init_punct"] = df["init_punct"].map(INITIAL_PUNCT_MAP)
+    df["final_punct"] = df["final_punct"].map(FINAL_PUNCT_MAP)
 
     return df
 

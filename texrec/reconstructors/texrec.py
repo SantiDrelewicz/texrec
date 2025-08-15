@@ -27,30 +27,30 @@ class TexRec:
     ):
         super().__init__()
 
-        self.hidden_dim = hidden_dim
-        self.bidirectional = bidirectional
-        self.lstm = lstm
-        self.n_layers = n_layers
-        self.dropout = dropout
+        self._hidden_dim = hidden_dim
+        self._bidirectional = bidirectional
+        self._lstm = lstm
+        self._n_layers = n_layers
+        self._dropout = dropout
 
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-multilingual-cased")
         self.tokenizer_fast = BertTokenizerFast.from_pretrained("google-bert/bert-base-multilingual-cased")
 
-        self.model = Model(hidden_size=hidden_dim,
-                           bidirectional=bidirectional,
-                           lstm=lstm,
-                           num_layers=n_layers,
-                           dropout=dropout).to(self.device)
+        self._model = Model(hidden_size=hidden_dim,
+                            bidirectional=bidirectional,
+                            lstm=lstm,
+                            num_layers=n_layers,
+                            dropout=dropout).to(self.device)
 
-        self.batch_size = None
-        self.criterion = nn.CrossEntropyLoss(ignore_index=-100)
-        self.learning_rate = None
-        self.optimizer = None
-        self.lr_scheduler_patience = None
-        self.early_stopping_patience = None
-        self.epochs = None
+        self._batch_size = None
+        self._criterion = nn.CrossEntropyLoss(ignore_index=-100)
+        self._learning_rate = None
+        self._optimizer = None
+        self._lr_scheduler_patience = None
+        self._early_stopping_patience = None
+        self._epochs = None
 
         self.is_fitted = False
 

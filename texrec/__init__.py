@@ -1,3 +1,3 @@
-from .texrec import TexRec
+from texrec.reconstructors import TexRec
 
 __all__ = ['TexRec']

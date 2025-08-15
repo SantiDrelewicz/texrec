@@ -5,7 +5,7 @@ from typing import Optional
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 from .preprocessing import extract_labels
-from ..constants import INITIAL_PUNCT_MAP, FINAL_PUNCT_MAP
+from .constants import INITIAL_PUNCT_MAP, FINAL_PUNCT_MAP
 
 
 def build_df(sentences: list[str], tokenizer) -> pd.DataFrame:

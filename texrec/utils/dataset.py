@@ -10,7 +10,7 @@ from .constants import INITIAL_PUNCT_MAP, FINAL_PUNCT_MAP
 
 def build_df(sentences: list[str], tokenizer) -> pd.DataFrame:
     """
-    Builds a DataFrame from the input sentences 
+    Builds a DataFrame from the input sentences
     by extracting labels of punctuation and capitalization.
 
     Args:
@@ -38,10 +38,10 @@ class PunctCapitalDataset(Dataset):
     def __init__(
         self,
         sentences: list[str], tokenizer,
-        device: Optional[torch.device] = None,
+        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ):
       self.dataset = build_df(sentences, tokenizer)
-      self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+      self.device = device
 
     def __len__(self):
         return len(self.dataset["instance_id"].unique())

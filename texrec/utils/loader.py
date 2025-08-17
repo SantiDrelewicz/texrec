@@ -30,8 +30,8 @@ def _is_valid_sentence(sentence: str) -> bool:
     return True
 
 
-def load(n_sentences: int | None = None, 
-         shuffle: bool = True, 
+def load(n_sentences: int | None = None,
+         shuffle: bool = True,
          random_seed: int | None = None) -> list[str]:
     """Load the Lain-American Spanish Open Subtitles corpus
     Args:
@@ -40,7 +40,7 @@ def load(n_sentences: int | None = None,
         random_seed (int | None): Random seed for reproducibility
     """
     response = requests.get("https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2024/mono/es_419.txt.gz", stream=True)
-    print("Descargando el corpus...")
+    print("Loading corpus...")
     with gzip.open(io.BytesIO(response.content), 'rt', encoding='utf-8') as file:
         lines = file.readlines()
 
@@ -50,7 +50,9 @@ def load(n_sentences: int | None = None,
         random.seed(random_seed)
         random.shuffle(valid_lines)
 
-    if n_sentences is not None: 
+    if n_sentences is not None:
         valid_lines = valid_lines[:n_sentences]
+        
+    print(f"Corpus Loaded with {len(valid_lines)} valid sentences.")
 
     return valid_lines

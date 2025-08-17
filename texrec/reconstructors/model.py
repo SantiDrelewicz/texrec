@@ -23,16 +23,19 @@ class Model(nn.Module):
         bidirectional: bool = False,
         lstm: bool = False,
         num_layers: int = 1,
-        dropout: float = 0.1,
+        dropout: float = 0.5,
         freeze: bool = True
     ):
         super().__init__()
 
-        self.embedding = BertModel.from_pretrained(TOKENIZER_EMBEDDING_MODEL_NAME).embeddings.word_embeddings
-
+        self.embedding = BertModel.from_pretrained(
+           TOKENIZER_EMBEDDING_MODEL_NAME
+        ).embeddings.word_embeddings
         if freeze:
           for param in self.embedding.parameters():
             param.requires_grad = False
+
+        self.input_dropout = nn.Dropout(dropout)
 
         self._num_directions = 2 if bidirectional else 1
 
@@ -51,6 +54,8 @@ class Model(nn.Module):
                             bidirectional=bidirectional,
                             dropout = dropout if num_layers > 1 else 0.0)
 
+        self.output_dropout = nn.Dropout(dropout)
+
         self._init_punct_head = nn.Linear(hidden_size * self._num_directions, 2)
         self._final_punct_head = nn.Linear(hidden_size * self._num_directions, 4)
         self._capital_head = nn.Linear(hidden_size * self._num_directions, 4)
@@ -58,7 +63,9 @@ class Model(nn.Module):
 
     def forward(self, x):
         emb = self.embedding(x)
+        emb = self.input_dropout(emb)
         out, _ = self.rnn(emb)
+        out = self.output_dropout(out)
 
         init_logits = self._init_punct_head(out)
         final_logits = self._final_punct_head(out)

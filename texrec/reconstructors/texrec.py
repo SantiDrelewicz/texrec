@@ -1,42 +1,44 @@
 from .model import Model
 from ..utils.dataset import collate_fn
 from ..utils.dataloader import create_dataloader
+from ..utils.constants import TOKENIZER_EMBEDDING_MODEL_NAME
 
 import os
 from typing import Optional
+from contextlib import nullcontext
 
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report
 
 import torch
+import torch.optim.lr_scheduler
 from torch import nn
+from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
+from torch.nn.utils import clip_grad_norm_
+
 from transformers import BertTokenizer, BertTokenizerFast
 
 
-class TexRec:
+class TexRec():
     def __init__(
         self,
         hidden_dim: int = 128,
-        lstm: bool = False,
         bidirectional: bool = False,
         n_layers: int = 1,
         dropout: float = 0.1,
-        device: Optional[torch.device] = None
+        lstm: bool = False,
+        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     ):
-        super().__init__()
-
+        # model params
         self._hidden_dim = hidden_dim
         self._bidirectional = bidirectional
         self._lstm = lstm
         self._n_layers = n_layers
         self._dropout = dropout
 
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        self.tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-multilingual-cased")
-        self.tokenizer_fast = BertTokenizerFast.from_pretrained("google-bert/bert-base-multilingual-cased")
+        self.device = device
 
         self._model = Model(hidden_size=hidden_dim,
                             bidirectional=bidirectional,
@@ -44,13 +46,13 @@ class TexRec:
                             num_layers=n_layers,
                             dropout=dropout).to(self.device)
 
-        self._batch_size = None
+        # tokenizers
+        self.tokenizer = BertTokenizer.from_pretrained(TOKENIZER_EMBEDDING_MODEL_NAME)
+        self.tokenizer_fast = BertTokenizerFast.from_pretrained(TOKENIZER_EMBEDDING_MODEL_NAME)
+
         self._criterion = nn.CrossEntropyLoss(ignore_index=-100)
-        self._learning_rate = None
-        self._optimizer = None
-        self._lr_scheduler_patience = None
-        self._early_stopping_patience = None
-        self._epochs = None
+
+        self.metrics = {}
 
         self.is_fitted = False
 
@@ -61,7 +63,7 @@ class TexRec:
     @property
     def n_params(self) -> int:
         """Number of trainable parameters in the model"""
-        return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        return sum(p.numel() for p in self._model.parameters() if p.requires_grad)
 
 
     @staticmethod
@@ -94,9 +96,9 @@ class TexRec:
 
     def _loss_fn(self, logits: dict[str, torch.Tensor], target: dict[str, torch.Tensor]) -> float:
         """Calculate the total loss for a batch of data"""
-        init_loss = self.criterion(logits["init_punct"].view(-1, 2), target["init_punct"].view(-1))
-        final_loss = self.criterion(logits["final_punct"].view(-1, 4), target["final_punct"].view(-1))
-        cap_loss = self.criterion(logits["capital"].view(-1, 4), target["capital"].view(-1))
+        init_loss = self._criterion(logits["init_punct"].view(-1, 2), target["init_punct"].view(-1))
+        final_loss = self._criterion(logits["final_punct"].view(-1, 4), target["final_punct"].view(-1))
+        cap_loss = self._criterion(logits["capital"].view(-1, 4), target["capital"].view(-1))
         return init_loss + final_loss + cap_loss
 
 
@@ -104,8 +106,8 @@ class TexRec:
     def _classif_report(all_trues: dict[str, list],
                         all_preds: dict[str, list],
                         epoch: int,
-                        output_dict: bool,
-                        mode: str) -> None | dict[str, dict]:
+                        mode: str,
+                        output_dict: bool = True) -> None | dict[str, dict]:
         cr = {}
         cr["init_punct"] = classification_report(
             all_trues["init_punct"], all_preds["init_punct"],
@@ -144,8 +146,8 @@ class TexRec:
               f.write(full_text + "\n\n")
 
 
-    def _train_step(self, train_loader: DataLoader,
-                    epoch: int, output_dict: bool = False) -> float | dict[str, float | dict]:
+    def _train_epoch(self, train_loader: DataLoader,
+                    epoch: int, output_dict: bool = True) -> float | dict[str, float | dict]:
         """Entrena una época del modelo y devuelve la pérdida en la época"""
         all_trues: dict[str, list] = {
             "init_punct": [], "final_punct": [], "capital": []
@@ -153,14 +155,25 @@ class TexRec:
         all_preds: dict[str, list] = {
             "init_punct": [], "final_punct": [], "capital": []
         }
-        self.model.train()
+        self._model.train()
         training_loss = 0.0
         for input_ids, target in train_loader:
-            self.optimizer.zero_grad()
-            logits = self.model(input_ids)
-            loss = self._loss_fn(logits, target)
-            loss.backward()
-            self.optimizer.step()
+            self._optimizer.zero_grad()
+
+            with (
+                nullcontext()
+                if self.device.type == "cpu" and self._lstm
+                else autocast(self.device.type)
+            ):
+                logits = self._model(input_ids)
+                loss = self._loss_fn(logits, target)
+
+            self._scaler.scale(loss).backward()
+            self._scaler.unscale_(self._optimizer)
+            clip_grad_norm_(self._model.parameters(), max_norm=1.0)
+            self._scaler.step(self._optimizer)
+            self._scaler.update()
+
             training_loss += loss.item()
 
             preds = TexRec._calc_preds_from_logits(logits)
@@ -168,9 +181,13 @@ class TexRec:
                 all_preds, all_trues,
                 preds, target
             )
-        classif_report = TexRec._classif_report(all_trues, all_preds,
-                                                             output_dict=output_dict,
-                                                             epoch=epoch, mode="train")
+
+        classif_report = TexRec._classif_report(
+            all_trues, all_preds,
+            output_dict=output_dict,
+            epoch=epoch,
+            mode="train"
+        )
         avg_train_loss = training_loss / len(train_loader)
 
         output = {"loss": avg_train_loss}
@@ -179,8 +196,8 @@ class TexRec:
         return output
 
 
-    def _eval_step(self, val_loader: DataLoader,
-                   epoch: int, output_dict: bool = False) -> float | dict[str, float | dict]:
+    def _val_epoch(self, val_loader: DataLoader,
+                   epoch: int, output_dict: bool = True) -> float | dict[str, float | dict]:
         """Evalúa el modelo en el conjunto de validación y devuelve la pérdida"""
         all_trues: dict[str, list] = {
             "init_punct": [], "final_punct": [], "capital": []
@@ -188,21 +205,33 @@ class TexRec:
         all_preds: dict[str, list] = {
             "init_punct": [], "final_punct": [], "capital": []
         }
-        self.model.eval()
+        self._model.eval()
         val_loss = 0.0
         with torch.no_grad():
+
             for input_ids, target in val_loader:
-                logits = self.model(input_ids)
-                loss = self._loss_fn(logits, target)
+
+                with (
+                    nullcontext()
+                    if self.device.type == "cpu" and self._lstm
+                    else autocast(self.device.type)
+                ):
+                    logits = self._model(input_ids)
+                    loss = self._loss_fn(logits, target)
+
                 val_loss += loss.item()
                 preds = TexRec._calc_preds_from_logits(logits)
                 TexRec._extend_all_preds_and_trues(
                     all_preds, all_trues,
                     preds, target
                 )
-        classif_report = TexRec._classif_report(all_trues, all_preds,
-                                                             epoch=epoch, mode="val",
-                                                             output_dict=output_dict)
+
+        classif_report = TexRec._classif_report(
+            all_trues, all_preds,
+            epoch=epoch,
+            mode="val",
+            output_dict=output_dict
+        )
         avg_val_loss = val_loss / len(val_loader)
 
         output = {"loss": avg_val_loss}
@@ -214,58 +243,129 @@ class TexRec:
     def train(
         self,
         train_data: list[str], val_data: list[str],
-        epochs: int = 1, batch_size: int = 1,
-        optimizer: torch.optim = torch.optim.SGD, lr: float = 1e-3,
-        output_classif_report_dict: bool = False
+        batch_size: int = 1,
+        num_workers: int = 0,
+        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+        optimizer: torch.optim = torch.optim.SGD,
+        lr: float = 1e-3,
+        lr_scheduler_factor: float = 0.1,
+        lr_scheduler_patience: int = 0,
+        early_stopping_patience: int = 2,
+        output_classif_report_dict: bool = True,
+        plot_losses: bool = False
     ):
-        self.batch_size = batch_size
-        self.learning_rate = lr
-        self.optimizer = optimizer(self.model.parameters(), lr=self.learning_rate)
-        self.epochs = epochs
+        self._batch_size = batch_size
+        self._learning_rate = lr
+        self._optimizer = optimizer(self._model.parameters(), lr=self._learning_rate)
+        self._lr_scheduler_patience = lr_scheduler_patience
+        self._early_stopping_patience = early_stopping_patience
 
         print(f"Extracting labels from data")
-        train_loader, val_loader = (
-            create_dataloader(train_data, self.tokenizer, batch_size, collate_fn),
-            create_dataloader(val_data, self.tokenizer, batch_size, collate_fn)
+        train_loader = create_dataloader(
+            train_data, self.tokenizer, self._batch_size, num_workers=num_workers, device=device
+        )
+        val_loader = create_dataloader(
+            val_data, self.tokenizer, self._batch_size, num_workers=num_workers, device=device
         )
 
-        losses: dict[str, list[float]] = {"train": [], "val": []}
+        self.metrics = {
+            "losses": {"train": [], "val": []}
+        }
 
         if output_classif_report_dict:
-          classif_reports = {"train": {"init_punct": [], "final_punct": [], "capital": []},
-                             "val"  : {"init_punct": [], "final_punct": [], "capital": []}}
+            self.metrics["classif_reports"] = {
+                "train": {"init_punct": [], "final_punct": [], "capital": []},
+                "val": {"init_punct": [], "final_punct": [], "capital": []}
+            }
 
-        print("Training and validating model...")
-        for epoch in range(1, epochs+1):
-            train_metrics = self._train_step(train_loader, epoch, output_dict=output_classif_report_dict)
-            train_loss = train_metrics["loss"]
-            losses["train"].append(train_loss)
-            val_metrics = self._eval_step(val_loader, epoch, output_dict=output_classif_report_dict)
-            val_loss = val_metrics["loss"]
-            losses["val"].append(val_metrics["loss"])
+        patience_counter = 0
+        self._scaler = GradScaler(self.device.type)
+        self._epochs = 1
+        best_avg_val_loss = float("inf")
+
+        self._scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self._optimizer,
+            mode="min",
+            factor=lr_scheduler_factor,
+            patience=lr_scheduler_patience,
+            verbose=True
+        )
+
+        # Set up auxiliar metrics in case scheduler activates
+        aux_metrics = {"losses": {"train": [], "val": []}}
+        if output_classif_report_dict:
+            aux_metrics["classif_reports"] = {
+                "train": {"init_punct": [], "final_punct": [], "capital": []},
+                "val": {"init_punct": [], "final_punct": [], "capital": []}
+            }
+
+        print(f"Training model with {self.n_params} parameters on {self.device.type}")
+        while True:
+            self.is_fitted = True
+
+            train_metrics = self._train_epoch(train_loader, self._epochs, output_dict=output_classif_report_dict)
+            avg_train_loss = train_metrics["loss"]
+            val_metrics = self._val_epoch(val_loader, self._epochs, output_dict=output_classif_report_dict)
+            avg_val_loss = val_metrics["loss"]
+
+            # Update aux_metrics
+            aux_metrics["losses"]["train"].append(avg_train_loss)
+            aux_metrics["losses"]["val"].append(avg_val_loss)
 
             if output_classif_report_dict:
                 train_cr, val_cr = train_metrics["classif_report"], val_metrics["classif_report"]
 
-                classif_reports["train"]["init_punct"].append(train_cr["init_punct"])
-                classif_reports["train"]["final_punct"].append(train_cr["final_punct"])
-                classif_reports["train"]["capital"].append(train_cr["capital"])
+                aux_metrics["classif_reports"]["train"]["init_punct"].append(train_metrics["classif_report"]["init_punct"])
+                aux_metrics["classif_reports"]["train"]["final_punct"].append(train_metrics["classif_report"]["final_punct"])
+                aux_metrics["classif_reports"]["train"]["capital"].append(train_metrics["classif_report"]["capital"])
 
-                classif_reports["val"]["init_punct"].append(val_cr["init_punct"])
-                classif_reports["val"]["final_punct"].append(val_cr["final_punct"])
-                classif_reports["val"]["capital"].append(val_cr["capital"])
+                aux_metrics["classif_reports"]["val"]["init_punct"].append(val_metrics["classif_report"]["init_punct"])
+                aux_metrics["classif_reports"]["val"]["final_punct"].append(val_metrics["classif_report"]["final_punct"])
+                aux_metrics["classif_reports"]["val"]["capital"].append(val_metrics["classif_report"]["capital"])
 
-            print(f"Epoch {epoch}/{epochs}: Train loss: {train_loss:.4f}, Val loss: {val_loss:.4f}")
+            self._scheduler.step(avg_val_loss)
+            if avg_val_loss < best_avg_val_loss:
+                best_avg_val_loss = avg_val_loss
+                patience_counter = 0
 
-        self.is_fitted = True
+                # Update metrics
+                self.metrics["losses"]["train"].extend(aux_metrics["losses"]["train"])
+                self.metrics["losses"]["val"].extend(aux_metrics["losses"]["val"])
+                if output_classif_report_dict:
+                    self.metrics["classif_reports"]["train"]["init_punct"].extend(aux_metrics["classif_reports"]["train"]["init_punct"])
+                    self.metrics["classif_reports"]["train"]["final_punct"].extend(aux_metrics["classif_reports"]["train"]["final_punct"])
+                    self.metrics["classif_reports"]["train"]["capital"].extend(aux_metrics["classif_reports"]["train"]["capital"])
 
-        TexRec.plot_loss_curves(losses)
-        print("Training and validation completed")
+                    self.metrics["classif_reports"]["val"]["init_punct"].extend(aux_metrics["classif_reports"]["val"]["init_punct"])
+                    self.metrics["classif_reports"]["val"]["final_punct"].extend(aux_metrics["classif_reports"]["val"]["final_punct"])
+                    self.metrics["classif_reports"]["val"]["capital"].extend(aux_metrics["classif_reports"]["val"]["capital"])
 
-        output = {"losses": losses}
-        if output_classif_report_dict:
-          return {"losses": losses, "classif_reports": classif_reports}
-        return output
+                self.save_model("texrec_model.pt")
+
+                # Reset aux_metrics
+                aux_metrics = {"losses": {"train": [], "val": []}}
+                if output_classif_report_dict:
+                    aux_metrics["classif_reports"] = {
+                        "train": {"init_punct": [], "final_punct": [], "capital": []},
+                        "val": {"init_punct": [], "final_punct": [], "capital": []}
+                    }
+            else:
+                patience_counter += 1
+                if patience_counter >= early_stopping_patience:
+                    print(f"Early stopping triggered at epoch {self._epochs}.")
+                    break
+
+            self._learning_rate = self._optimizer.param_groups[0]["lr"]
+
+            print(
+                f"Epoch {self._epochs}: Train loss: {avg_train_loss:.4f}, Val loss: {avg_val_loss:.4f}, patience: {patience_counter}, lr: {self._learning_rate:.6f}"
+            )
+            self._epochs += 1
+
+        if plot_losses:
+            TexRec.plot_loss_curves(self.metrics["losses"])
+
+        print("Training completed")
 
 
     @staticmethod
@@ -307,9 +407,9 @@ class TexRec:
         word_ids = enc.word_ids(batch_index=0)  # list of length L
 
         # 2) Model forward
-        self.model.eval()
+        self._model.eval()
         with torch.no_grad():
-            logits = self.model(input_ids)
+            logits = self._model(input_ids)
 
         init_pred = logits["init_punct"].argmax(dim=-1).squeeze(0).cpu().tolist()
         final_pred = logits["final_punct"].argmax(dim=-1).squeeze(0).cpu().tolist()
@@ -399,9 +499,9 @@ class TexRec:
             input_ids_tensor = torch.tensor([input_ids], device=device)
 
             # 3. Predict
-            self.model.eval()
+            self._model.eval()
             with torch.no_grad():
-                init_logits, final_logits, cap_logits = self.model(input_ids_tensor)
+                init_logits, final_logits, cap_logits = self._model(input_ids_tensor)
 
             # 4. Get predictions per token
             init_pred = init_logits.argmax(dim=-1).squeeze(0).cpu().tolist()
@@ -436,22 +536,25 @@ class TexRec:
             raise ValueError("Model must be trained before saving")
 
         model_data = {
-            "model_state_dict": self.model.state_dict(),
+            "model_state_dict": self._model.state_dict(),
             "model_config": {
-                "hidden_dim": self.hidden_dim,
-                "n_layers": self.n_layers,
-                "dropout": self.dropout,
-                "bidirectional": self.bidirectional,
-                "lstm": self.lstm,
+                "hidden_dim": self._hidden_dim,
+                "n_layers": self._n_layers,
+                "dropout": self._dropout,
+                "bidirectional": self._bidirectional,
+                "lstm": self._lstm,
             },
             "training_config": {
-                "learning_rate": self.learning_rate,
-                "epochs": self.epochs,
-                "batch_size": self.batch_size,
+                "final_learning_rate": self._learning_rate,
+                "epochs": self._epochs,
+                "batch_size": self._batch_size,
+                "optimizer": self._optimizer.__class__.__name__,
+                "scheduler": self._scheduler.__class__.__name__,
+                "lr_scheduler_patience": self._lr_scheduler_patience,
+                "early_stopping_patience": self._early_stopping_patience,
             },
-            "is_fitted": self.is_fitted,
+            "metrics": self.metrics,
         }
-
         torch.save(model_data, filepath)
         print(f"Model saved to {filepath}")
 
@@ -462,27 +565,27 @@ class TexRec:
 
         # Update configs
         config = model_data["model_config"]
-        self.hidden_dim = config["hidden_dim"]
-        self.n_layers = config["n_layers"]
-        self.dropout = config["dropout"]
-        self.lstm = config["lstm"]
-        self.bidirectional = config["bidirectional"]
+        self._hidden_dim = config["hidden_dim"]
+        self._n_layers = config["n_layers"]
+        self._dropout = config["dropout"]
+        self._lstm = config["lstm"]
+        self._bidirectional = config["bidirectional"]
 
-        train_config = model_data["training_config"]
-        self.learning_rate = train_config["learning_rate"]
-        self.batch_size = train_config["batch_size"]
+        self.train_config = model_data["training_config"]
+        self.metrics = model_data["metrics"]
 
         # Recreate model
-        self.model = Model(
-            hidden_size=self.hidden_dim,
-            num_layers=self.n_layers,
-            dropout=self.dropout,
-            bidirectional=self.bidirectional,
-            lstm=self.lstm
+        self._model = Model(
+            hidden_size=self._hidden_dim,
+            num_layers=self._n_layers,
+            dropout=self._dropout,
+            bidirectional=self._bidirectional,
+            lstm=self._lstm
         ).to(self.device)
 
         # Load state
-        self.model.load_state_dict(model_data["model_state_dict"])
-        self.is_fitted = model_data["is_fitted"]
+        self._model.load_state_dict(model_data["model_state_dict"])
+
+        self.is_fitted = True
 
         print(f"Model loaded from {filepath}")

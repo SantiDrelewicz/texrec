@@ -15,7 +15,7 @@ class TexRec:
         url = f"https://github.com/SantiDrelewicz/pitext/releases/download/{version}/{filename}"
         
         # Cache local (~/.cache/pitext/texrec_model.pt)
-        cache_path = Path.home() / ".cache" / "pitext" / filename
+        cache_path = Path.home() / ".cache" / "texrec" / filename
         cache_path.parent.mkdir(parents=True, exist_ok=True)
 
          # Descargar si no está en caché

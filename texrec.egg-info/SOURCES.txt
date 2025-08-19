@@ -6,9 +6,10 @@ texrec.egg-info/SOURCES.txt
 texrec.egg-info/dependency_links.txt
 texrec.egg-info/requires.txt
 texrec.egg-info/top_level.txt
-texrec/reconstructors/__init__.py
-texrec/reconstructors/model.py
-texrec/reconstructors/texrec.py
+texrec/engine/model.py
+texrec/reconstructor/__init__.py
+texrec/reconstructor/model.py
+texrec/reconstructor/texrec.py
 texrec/utils/__init__.py
 texrec/utils/constants.py
 texrec/utils/dataloader.py

@@ -1,3 +1,4 @@
+from pyexpat import model
 from .model import TexRecModel
 from pathlib import Path
 import requests
@@ -28,9 +29,8 @@ class TexRec:
             print("Descarga completada ✅")
 
         # Cargar el modelo
-        state = torch.load(cache_path, map_location="cpu")
-        model = TexRecModel()  # tu clase definida en pitext
-        model.load_model(state)
+        model = TexRecModel()
+        model.load_model(str(cache_path))  # ✅ pasarle la ruta, no el dict
         model.eval()
         self.__model = model
 

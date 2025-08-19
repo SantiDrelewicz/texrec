@@ -1,6 +1,6 @@
 from torch import nn
 from transformers import BertModel
-from ..utils.constants import TOKENIZER_EMBEDDING_MODEL_NAME
+from ..utils.constants import TOKENIZER_EMBEDDING_NAME
 
 
 class Model(nn.Module):
@@ -28,8 +28,9 @@ class Model(nn.Module):
     ):
         super().__init__()
 
+        # Load the pre-trained BERT model's embedding layer
         self.embedding = BertModel.from_pretrained(
-           TOKENIZER_EMBEDDING_MODEL_NAME
+           TOKENIZER_EMBEDDING_NAME
         ).embeddings.word_embeddings
         if freeze:
           for param in self.embedding.parameters():

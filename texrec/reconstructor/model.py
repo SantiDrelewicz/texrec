@@ -1,10 +1,9 @@
-from .model import Model
+from ..engine.model import Model
 from ..utils.dataset import collate_fn
 from ..utils.dataloader import create_dataloader
 from ..utils.constants import TOKENIZER_EMBEDDING_MODEL_NAME
 
 import os
-from typing import Optional
 from contextlib import nullcontext
 
 import pandas as pd
@@ -21,7 +20,7 @@ from torch.nn.utils import clip_grad_norm_
 from transformers import BertTokenizer, BertTokenizerFast
 
 
-class TexRec():
+class TexRecModel():
     def __init__(
         self,
         hidden_dim: int = 128,
@@ -176,13 +175,13 @@ class TexRec():
 
             training_loss += loss.item()
 
-            preds = TexRec._calc_preds_from_logits(logits)
-            TexRec._extend_all_preds_and_trues(
+            preds = TexRecModel._calc_preds_from_logits(logits)
+            TexRecModel._extend_all_preds_and_trues(
                 all_preds, all_trues,
                 preds, target
             )
 
-        classif_report = TexRec._classif_report(
+        classif_report = TexRecModel._classif_report(
             all_trues, all_preds,
             output_dict=output_dict,
             epoch=epoch,
@@ -220,13 +219,13 @@ class TexRec():
                     loss = self._loss_fn(logits, target)
 
                 val_loss += loss.item()
-                preds = TexRec._calc_preds_from_logits(logits)
-                TexRec._extend_all_preds_and_trues(
+                preds = TexRecModel._calc_preds_from_logits(logits)
+                TexRecModel._extend_all_preds_and_trues(
                     all_preds, all_trues,
                     preds, target
                 )
 
-        classif_report = TexRec._classif_report(
+        classif_report = TexRecModel._classif_report(
             all_trues, all_preds,
             epoch=epoch,
             mode="val",
@@ -315,13 +314,13 @@ class TexRec():
             if output_classif_report_dict:
                 train_cr, val_cr = train_metrics["classif_report"], val_metrics["classif_report"]
 
-                aux_metrics["classif_reports"]["train"]["init_punct"].append(train_metrics["classif_report"]["init_punct"])
-                aux_metrics["classif_reports"]["train"]["final_punct"].append(train_metrics["classif_report"]["final_punct"])
-                aux_metrics["classif_reports"]["train"]["capital"].append(train_metrics["classif_report"]["capital"])
+                aux_metrics["classif_reports"]["train"]["init_punct"].append(train_cr["init_punct"])
+                aux_metrics["classif_reports"]["train"]["final_punct"].append(train_cr["final_punct"])
+                aux_metrics["classif_reports"]["train"]["capital"].append(train_cr["capital"])
 
-                aux_metrics["classif_reports"]["val"]["init_punct"].append(val_metrics["classif_report"]["init_punct"])
-                aux_metrics["classif_reports"]["val"]["final_punct"].append(val_metrics["classif_report"]["final_punct"])
-                aux_metrics["classif_reports"]["val"]["capital"].append(val_metrics["classif_report"]["capital"])
+                aux_metrics["classif_reports"]["val"]["init_punct"].append(val_cr["init_punct"])
+                aux_metrics["classif_reports"]["val"]["final_punct"].append(val_cr["final_punct"])
+                aux_metrics["classif_reports"]["val"]["capital"].append(val_cr["capital"])
 
             self._scheduler.step(avg_val_loss)
             if avg_val_loss < best_avg_val_loss:
@@ -363,16 +362,15 @@ class TexRec():
             self._epochs += 1
 
         if plot_losses:
-            TexRec.plot_loss_curves(self.metrics["losses"])
+            self.plot_loss_curves(self.metrics["losses"])
 
         print("Training completed")
 
 
-    @staticmethod
-    def plot_loss_curves(losses: dict[str, list]):
+    def plot_loss_curves(self):
         """Plot training and validation losses"""
-        plt.plot(losses["train"], label="train")
-        plt.plot(losses["val"], label="val")
+        plt.plot(self.metrics["losses"]["train"], label="train")
+        plt.plot(self.metrics["losses"]["val"], label="val")
         plt.legend()
         plt.show()
 

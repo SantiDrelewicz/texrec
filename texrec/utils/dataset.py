@@ -1,7 +1,6 @@
 import pandas as pd
 from tqdm import tqdm
 import torch
-from typing import Optional
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 from .preprocessing import extract_labels
@@ -38,7 +37,9 @@ class PunctCapitalDataset(Dataset):
     def __init__(
         self,
         sentences: list[str], tokenizer,
-        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device: torch.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
     ):
       self.dataset = build_df(sentences, tokenizer)
       self.device = device

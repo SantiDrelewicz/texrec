@@ -526,7 +526,15 @@ class TexRecModel():
             final_df.to_csv(output_file, index=False)
 
         return final_df
+    
 
+    def eval(self):
+        """
+        Sets the model to evaluation mode.
+        """
+        self._model.eval()
+        return self
+    
 
     def save_model(self, filepath: str):
         """Save trained model"""

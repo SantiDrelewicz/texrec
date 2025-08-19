@@ -39,4 +39,4 @@ class TexRec:
         """
         Calls the TexRecModel's __call__ method to perform plane text reconstruction.
         """
-        return self.__model.predict(text)
+        return self.__model.predict(text)    

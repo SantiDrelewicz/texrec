@@ -12,7 +12,7 @@ class TexRec:
 
     def __init__(self, filename="texrec_model.pt", version="v0.1.0"):
         # URL del release en GitHub
-        url = f"https://github.com/SantiDrelewicz/pitext/releases/download/{version}/{filename}"
+        url = f"https://github.com/SantiDrelewicz/texrec/releases/download/{version}/{filename}"
         
         # Cache local (~/.cache/pitext/texrec_model.pt)
         cache_path = Path.home() / ".cache" / "texrec" / filename

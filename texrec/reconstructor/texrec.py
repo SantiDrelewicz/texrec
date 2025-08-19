@@ -28,9 +28,9 @@ class TexRec:
             print("Descarga completada ✅")
 
         # Cargar el modelo
-        state = torch.load(cache_path, map_location="cpu", )
+        state = torch.load(cache_path, map_location="cpu")
         model = TexRecModel()  # tu clase definida en pitext
-        model.load_state_dict(state)
+        model.load_model(state)
         model.eval()
         self.__model = model
 

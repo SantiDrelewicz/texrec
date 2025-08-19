@@ -1,7 +1,7 @@
 from ..engine.model import Model
 from ..utils.dataset import collate_fn
 from ..utils.dataloader import create_dataloader
-from ..utils.constants import TOKENIZER_EMBEDDING_MODEL_NAME
+from ..utils.constants import TOKENIZER_EMBEDDING_NAME
 
 import os
 from contextlib import nullcontext
@@ -46,8 +46,8 @@ class TexRecModel():
                             dropout=dropout).to(self.device)
 
         # tokenizers
-        self.tokenizer = BertTokenizer.from_pretrained(TOKENIZER_EMBEDDING_MODEL_NAME)
-        self.tokenizer_fast = BertTokenizerFast.from_pretrained(TOKENIZER_EMBEDDING_MODEL_NAME)
+        self.tokenizer = BertTokenizer.from_pretrained(TOKENIZER_EMBEDDING_NAME)
+        self.tokenizer_fast = BertTokenizerFast.from_pretrained(TOKENIZER_EMBEDDING_NAME)
 
         self._criterion = nn.CrossEntropyLoss(ignore_index=-100)
 

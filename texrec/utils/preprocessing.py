@@ -24,9 +24,12 @@ def extract_labels(sentence: str, instance_id: int, tokenizer: BertTokenizer) ->
     for i in range(len(all_tokens)):
 
       try:
+
         if all_tokens[i] == '¿':
           continue
+        
         else:
+
           if all_tokens[i-1] == '¿':
             init_punct = all_tokens[i-1]
           else:
